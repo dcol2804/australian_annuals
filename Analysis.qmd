@@ -1,0 +1,51 @@
+---
+title: "Analysis of annuals in Australia"
+format: html
+editor: visual
+---
+
+# Background & aims
+
+## Aims
+
+1.  Replicate and extend results of Poppenwimer et al 2023 (https://doi.org/10.1101/2022.09.13.507878) showing annuals are more common in dry, unpredictable envs in Australia
+
+# Datasets
+
+## AusTraits
+
+Load Austraits growth form (using only public released data
+
+```{r}
+
+```
+
+## GBIF
+
+Load cleaned GBIF/ALA dataset as tibble
+
+```{r}
+
+```
+
+## Spatial grid
+
+Create/load a grid of cells in Australia, that we will use for analysis
+
+```{r}
+
+```
+
+How to identify which cell each point is located in
+
+```{r}
+
+```
+
+## Coavariates
+
+Download climate, soil and other covariates
+
+```{r}
+
+```
