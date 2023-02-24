@@ -14,9 +14,23 @@ editor: visual
 
 ## AusTraits
 
-Load Austraits growth form (using only public released data
+Load Austraits growth form (using only public released data)
 
 ```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+
+#remotes::install_github("traitecoevo/austraits")
+library(austraits) 
+
+# load austraits
+austraits <- load_austraits(path="data/austraits", version = get_version_latest())
+
+# filter to the life history data and remove problematic datasets
+lh_taxa <- austraits$traits %>% filter(trait_name == "life_history", 
+                                       !dataset_id %in% c("Sjostrom_2006", "ABRS_1981", "WAH_1998", "WAH_2016", "NHNSW_2014", "NHNSW_2014_2"))
+
+# I can provide code for a quick-and-dirty way to get just one consensus value per species if needed
 
 ```
 
