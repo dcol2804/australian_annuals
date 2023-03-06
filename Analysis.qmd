@@ -18,6 +18,123 @@ Load Austraits growth form (using only public released data
 
 ```{r}
 
+# The following code classifies each taxon as annual (if at least one source has scored it as annual, or perennial ( the remainder of taxa in AusTraits with atleast one life_history observation), then adds on growth_form
+
+
+#install.packages("tidyverse")
+library(tidyverse)
+
+#remotes::install_github("traitecoevo/austraits")
+library(austraits) 
+
+# load austraits
+austraits <- load_austraits(path="data/austraits", version = "4.1.0")
+
+# Filter to the life_history data and remove problematic data sources
+life_history_annual <- austraits$traits %>% filter(trait_name == "life_history" & !dataset_id %in% c("Sjostrom_2006", "ABRS_1981", "WAH_1998", "WAH_2016", "NHNSW_2014", "NHNSW_2014_2")) %>% 
+  
+# Filter to observations scored as annual and make a new column
+filter(str_detect(value, "annual")) %>% mutate(annual_perennial = "annual")
+
+
+#take out problem annuals in the scraped datasets
+
+#install.packages("readxl")
+library(readxl)
+
+# read in the sheet of taxon names that need removing
+mistakes1 <- read_excel("data/flora error changes.xlsx", sheet = 4)
+
+# remove them from the list of annuals (I'm using original name column as I identified them by looking at the raw scraped data)
+life_history_annual <- life_history_annual %>% filter(!original_name %in% mistakes1$taxon_name)
+
+# create the perennial dataset the same way
+life_history_perennial = austraits$traits %>% filter(trait_name == "life_history" & !dataset_id %in% c("Sjostrom_2006", "ABRS_1981", "WAH_1998", "WAH_2016", "NHNSW_2014", "NHNSW_2014_2")) %>% 
+  
+# Filter to observations scored as perennial and remove taxa that have been marked as annual. These taxa will be marked as perennial
+filter(str_detect(value, "perennial")) %>% filter(!taxon_name %in% life_history_annual$taxon_name) %>% mutate(annual_perennial = "perennial")
+
+# bind them into one dataset
+life_history <- rbind(life_history_annual, life_history_perennial)
+
+###########################################################################
+
+life_history <- life_history %>% group_by(taxon_name, annual_perennial) %>% summarise(n_datasets = n()) %>% 
+  
+  
+  # Add in the native introduced status from the APC
+  left_join(austraits$taxa %>% select(taxon_name, family, genus, taxon_distribution, establishment_means), by = "taxon_name") %>% 
+  
+
+  # Join on Lizzy's woodiness dataset, removing any duplicates of taxon_name
+  left_join(austraits$traits %>% filter(trait_name == "woodiness_detailed", dataset_id == "Wenk_2022") %>% filter(!duplicated(taxon_name)) %>% select(taxon_name, value) %>% rename(woodiness = value), by = "taxon_name") %>% 
+  
+  # Get Lizzy's growth form for each taxon
+  left_join(austraits$traits %>%  filter(trait_name == "plant_growth_form", dataset_id == "Wenk_2022") %>% filter(!duplicated(taxon_name)) %>% select(taxon_name, value) %>% rename(plant_growth_form = value), by = "taxon_name") %>% 
+  
+  # add on growth substrate (rough way to do this but most taxa have either no growth substrate data or similar growth substrate data between sources)
+  left_join(austraits$traits %>%  filter(trait_name == "plant_growth_substrate") %>% filter(!duplicated(taxon_name)) %>% select(taxon_name, value) %>% rename(growth_substrate = value), by = "taxon_name")
+
+
+# remove growth substrate errors from scraped datasets
+
+mistakes2 = read_excel("data/flora error changes.xlsx", sheet = 1)
+  
+life_history$growth_substrate = ifelse(life_history$taxon_name %in% mistakes2$taxon_name , NA, life_history$growth_substrate)
+
+
+########################################################################
+  # The following code supplied by Will Cornwell and Thomas Mesaglio
+  
+  # It separates out the austraits (APC) taxon_distributions column into states ########################################################################
+
+  # create state columns
+sep_state_data <-
+  str_split(unique(life_history$taxon_distribution), ",")
+
+#get unique places
+all_codes <- unique(str_trim(unlist(sep_state_data)))
+apc_places <- unique(word(all_codes[!is.na(all_codes)], 1, 1))
+apc_species <- unique(life_history)
+
+#make a table to fill in
+data.frame(col.names = apc_places)
+species_df <- tibble(species = life_history$taxon_name)
+
+for (i in 1:length(apc_places)) {
+  species_df <- bind_cols(species_df, NA)
+}
+names(species_df) <- c("species", apc_places)
+
+state_parse_and_add_column <- function(species_df, state, apc_species){
+  print(all_codes[grepl(state,all_codes)]) # checking for weird ones
+  species_df[,state] <- case_when(
+    grepl(paste0("\\b",state," \\(uncertain origin\\)"), apc_species$taxon_distribution) ~ "uncertain origin",
+    grepl(paste0("\\b",state," \\(naturalised\\)"), apc_species$taxon_distribution) ~ "naturalised",
+    grepl(paste0("\\b",state," \\(doubtfully naturalised\\)"), apc_species$taxon_distribution) ~ "doubtfully naturalised",
+    grepl(paste0("\\b",state," \\(native and naturalised\\)"), apc_species$taxon_distribution) ~ "native and naturalised",
+    grepl(paste0("\\b",state," \\(formerly naturalised\\)"), apc_species$taxon_distribution) ~ "formerly naturalised",
+    grepl(paste0("\\b",state," \\(presumed extinct\\)"), apc_species$taxon_distribution) ~ "presumed extinct",
+    grepl(paste0("\\b",state," \\(native and doubtfully naturalised\\)"), apc_species$taxon_distribution) ~ "native and doubtfully naturalised",
+    grepl(paste0("\\b",state," \\(native and uncertain origin\\)"), apc_species$taxon_distribution) ~ "native and uncertain origin",
+    grepl(paste0("\\b",state), apc_species$taxon_distribution) ~ "native", #no entry = native, it's important this is last in the list
+    TRUE ~ "not present"
+  )
+  return(species_df)
+}
+
+
+for (i in 1:length(apc_places)){
+  species_df <- state_parse_and_add_column(species_df,apc_places[i],apc_species)
+}
+
+###############################################################################
+# join them to the data
+
+life_history <- left_join(life_history, species_df %>% rename(taxon_name = species), by = "taxon_name")
+
+
+
 ```
 
 ## GBIF
